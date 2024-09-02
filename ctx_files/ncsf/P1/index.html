@@ -47057,8 +47057,6 @@ var mriview = (function(module) {
 
         var defers = [];
         for (var i = 0; i < this.active.data.length; i++) {
-            console.log(i)
-            console.log(this.active.name)
             defers.push(subjects[this.active.data[i].subject].loaded)
         }
         $.when.apply(null, defers).done(function() {
@@ -47079,9 +47077,7 @@ var mriview = (function(module) {
                 else
                     $(this).removeClass("ui-selected");
             })
-            console.log('Marcus here ' + this.active)
-            console.log(this.active.data.length)
-            console.log(this.active.data.raw)
+
             $(this.object).find("#datasets").val(name);
             if (typeof(this.active.description) == "string") {
                 var html = name+"<div class='datadesc'>"+this.active.description+"</div>";
@@ -47145,16 +47141,39 @@ var mriview = (function(module) {
 
         $("#brain").on('mousemove',
             function (event) {
-                // only implemented for 1d volume datasets
-                if (this.active.data.length != 1 || this.active.data[0].raw  || this.active.data[0].verts) {
+                // only implemented for 1d volume datasets or vertex datasets
+                if (this.active.data.length != 1 || this.active.data[0].raw) {
                     $('#mouseover_value').css('display', 'none')
                     return
                 }
-
-                // set mouseover value if mouse is over a vertex
-                mouse_index = this.getMouseIndex(event)
-                if (mouse_index !== -1) {
-                    value = this.active.data[0].textures[0].image.data[mouse_index]
+                // We need to use a different logic if we have a VolumeData or a VertexData object
+                let value = null;
+                if (this.active.vertex) {
+                    coords = this.getCoords(event)
+                    if (coords !== -1) {
+                        hemiIdx = (coords.hemi == 'left') ? 0 : 1
+                        // console.log('hemiIdx: ', hemiIdx)
+                        vertex = coords.vertex
+                        // console.log('vertex: ', vertex)
+                        // Now we need to map back with the index map
+                        // First figure out the subject, then get the index map
+                        subject = this.active.data[0].subject
+                        indexMap = subjects[subject].hemis[coords.hemi].indexMap
+                        // console.log("vertex before: " + vertex);
+                        vertex = indexMap[vertex]
+                        // console.log("vertex after: " + vertex);
+                        // Now access the data
+                        value = this.active.data[0].verts[0][hemiIdx].array[vertex]
+                    }
+                } else {
+                    // Get index of the mosaic to get the value
+                    mouse_index = this.getMouseIndex(event)
+                    if (mouse_index !== -1) {
+                        value = this.active.data[0].textures[0].image.data[mouse_index]
+                    }
+                }
+                // console.log("Value on mouseover: " + value);
+                if (value !== null) {
                     $('#mouseover_value').text(parseFloat(value).toPrecision(3))
                     $('#mouseover_value').css('display', 'block')
                 } else {
@@ -47167,7 +47186,7 @@ var mriview = (function(module) {
         return surf;
     };
 
-    module.Viewer.prototype.getMouseIndex = function(event) {
+    module.Viewer.prototype.getCoords = function(event) {
         if (this.surfs[0].pick && this.surfs[0].surf.picker) {
             this.svgOff(this.surfs)
             let coords = this.surfs[0].surf.picker.get_vertex_index(
@@ -47177,11 +47196,21 @@ var mriview = (function(module) {
                 event.clientY,
             )
             this.svgOn(this.surfs)
-            if (coords === -1) {
+            // console.log("coords: " + JSON.stringify(coords));
+            return coords
+        }
+        return -1
+    };
+
+    module.Viewer.prototype.getMouseIndex = function(event) {
+        if (this.surfs[0].pick && this.surfs[0].surf.picker) {
+            let coords = this.getCoords(event)
+            // console.log(coords)
+            if (coords !== -1) {
+                return this.xyxToI(coords.voxel.x, coords.voxel.y, coords.voxel.z)
+            } else {
                 return -1
             }
-            console.log(coords)
-            return this.xyxToI(coords.voxel.x, coords.voxel.y, coords.voxel.z)
         }
         return -1
     };
@@ -47288,20 +47317,38 @@ var mriview = (function(module) {
             if (this.surfs[i].pick)
                 coords = this.surfs[i].pick(this.renderer, this.camera, evt.x, evt.y);
         }
-
-        // 
-        // // set the picked value display
-        // 
-
-        // only implemented for 1d volume datasets
-        if (this.active.data.length != 1 || this.active.data[0].raw || this.active.data[0].verts) {
+        // set the picked value display
+        // only implemented for 1d volume datasets or vertex datasets
+        if (this.active.data.length != 1 || this.active.data[0].raw) {
             $('#picked_value').css('display', 'none')
             return
         }
 
-        if (coords !== -1) {
-            let mouse_index = this.xyxToI(coords.voxel.x, coords.voxel.y, coords.voxel.z)
-            value = this.active.data[0].textures[0].image.data[mouse_index]
+        // We need to use a different logic if we have a VolumeData or a VertexData object
+        let value = null;
+        if (this.active.vertex) {
+            if (coords !== -1) {
+                hemiIdx = (coords.hemi == 'left') ? 0 : 1
+                vertex = coords.vertex
+                // Now we need to map back with the index map
+                // First figure out the subject, then get the index map
+                subject = this.active.data[0].subject
+                indexMap = subjects[subject].hemis[coords.hemi].indexMap
+                vertex = indexMap[vertex]
+                // Now access the data
+                value = this.active.data[0].verts[0][hemiIdx].array[vertex]
+            }
+        } else {
+            if (coords !== -1) {
+                // Get index of the mosaic to get the value
+                let mouse_index = this.xyxToI(coords.voxel.x, coords.voxel.y, coords.voxel.z)
+                if (mouse_index !== -1) {
+                    value = this.active.data[0].textures[0].image.data[mouse_index]
+                }
+            }
+        }
+        console.log("Value on click: " + value);
+        if (value !== null) {
             $('#picked_value').text(parseFloat(value).toPrecision(3))
             $('#picked_value').css('display', 'block')
         } else {
@@ -74058,7 +74105,7 @@ subjects[name] = new mriview.Surface(subjects[name]);
 }
 figure = new jsplot.W2Figure();
 viewer = figure.add(mriview.Viewer, "main", true);
-dataviews = dataset.fromJSON({"views": [{"data": ["__b5417e3f9dc83cc0"], "state": null, "attrs": {"priority": 1}, "desc": "", "cmap": ["RdBu_r"], "vmin": [0.0], "vmax": [8.81046066520125], "name": "gauss-ecc"}, {"data": ["__07bc5e2c2b6d5650"], "state": null, "attrs": {"priority": 1}, "desc": "", "cmap": ["RdBu_r"], "vmin": [-3.141438327667485], "vmax": [3.141418978457731], "name": "gauss-pol"}, {"data": ["__bb60a7a830ad1303"], "state": null, "attrs": {"priority": 1}, "desc": "", "cmap": ["RdBu_r"], "vmin": [0.0], "vmax": [13.200690911026967], "name": "gauss-size_1"}, {"data": ["__edc951ba0afb0298"], "state": null, "attrs": {"priority": 1}, "desc": "", "cmap": ["RdBu_r"], "vmin": [0.0], "vmax": [0.9238477864094352], "name": "gauss-rsq"}, {"data": ["__55230900c01947b9"], "state": null, "attrs": {"priority": 1}, "desc": "", "cmap": ["RdBu_r"], "vmin": [0.0], "vmax": [1.5], "name": "csf-width_r"}, {"data": ["__45b75dd6f46203d5"], "state": null, "attrs": {"priority": 1}, "desc": "", "cmap": ["RdBu_r"], "vmin": [0.0], "vmax": [6.0], "name": "csf-SFp"}, {"data": ["__0fa51a4b2dbdaccf"], "state": null, "attrs": {"priority": 1}, "desc": "", "cmap": ["RdBu_r"], "vmin": [0.0], "vmax": [200.0], "name": "csf-CSp"}, {"data": ["__3fe02292d4e84786"], "state": null, "attrs": {"priority": 1}, "desc": "", "cmap": ["RdBu_r"], "vmin": [0.0], "vmax": [10.0], "name": "csf-crf_exp"}, {"data": ["__becb43e6d82685cc"], "state": null, "attrs": {"priority": 1}, "desc": "", "cmap": ["RdBu_r"], "vmin": [0.0], "vmax": [7600.902152057105], "name": "csf-aulcsf"}, {"data": ["__0c76bd8dddaa9ecf"], "state": null, "attrs": {"priority": 1}, "desc": "", "cmap": ["RdBu_r"], "vmin": [0.0], "vmax": [0.8562098741531372], "name": "csf-rsq"}], "data": {"__edc951ba0afb0298": {"split": 189700, "frames": 1, "name": "__edc951ba0afb0298", "subject": "sub-12112020", "min": 0.0, "max": 0.9238477945327759, "raw": false}, "__0c76bd8dddaa9ecf": {"split": 189700, "frames": 1, "name": "__0c76bd8dddaa9ecf", "subject": "sub-12112020", "min": 0.0, "max": 0.8562098741531372, "raw": false}, "__3fe02292d4e84786": {"split": 189700, "frames": 1, "name": "__3fe02292d4e84786", "subject": "sub-12112020", "min": 0.0, "max": 10.0, "raw": false}, "__55230900c01947b9": {"split": 189700, "frames": 1, "name": "__55230900c01947b9", "subject": "sub-12112020", "min": 0.0, "max": 1.5, "raw": false}, "__07bc5e2c2b6d5650": {"split": 189700, "frames": 1, "name": "__07bc5e2c2b6d5650", "subject": "sub-12112020", "min": -3.1414382457733154, "max": 3.141418933868408, "raw": false}, "__45b75dd6f46203d5": {"split": 189700, "frames": 1, "name": "__45b75dd6f46203d5", "subject": "sub-12112020", "min": 0.0, "max": 6.0, "raw": false}, "__becb43e6d82685cc": {"split": 189700, "frames": 1, "name": "__becb43e6d82685cc", "subject": "sub-12112020", "min": 0.0, "max": 7600.90234375, "raw": false}, "__bb60a7a830ad1303": {"split": 189700, "frames": 1, "name": "__bb60a7a830ad1303", "subject": "sub-12112020", "min": 0.0, "max": 13.200691223144531, "raw": false}, "__0fa51a4b2dbdaccf": {"split": 189700, "frames": 1, "name": "__0fa51a4b2dbdaccf", "subject": "sub-12112020", "min": 0.0, "max": 200.0, "raw": false}, "__b5417e3f9dc83cc0": {"split": 189700, "frames": 1, "name": "__b5417e3f9dc83cc0", "subject": "sub-12112020", "min": 0.0, "max": 8.810461044311523, "raw": false}}, "images": {"__edc951ba0afb0298": ["data/__edc951ba0afb0298_0.png"], "__0c76bd8dddaa9ecf": ["data/__0c76bd8dddaa9ecf_0.png"], "__3fe02292d4e84786": ["data/__3fe02292d4e84786_0.png"], "__55230900c01947b9": ["data/__55230900c01947b9_0.png"], "__07bc5e2c2b6d5650": ["data/__07bc5e2c2b6d5650_0.png"], "__45b75dd6f46203d5": ["data/__45b75dd6f46203d5_0.png"], "__becb43e6d82685cc": ["data/__becb43e6d82685cc_0.png"], "__bb60a7a830ad1303": ["data/__bb60a7a830ad1303_0.png"], "__0fa51a4b2dbdaccf": ["data/__0fa51a4b2dbdaccf_0.png"], "__b5417e3f9dc83cc0": ["data/__b5417e3f9dc83cc0_0.png"]}});
+dataviews = dataset.fromJSON({"views": [{"data": ["__b60861cacb53d811"], "state": null, "attrs": {"priority": 1}, "desc": "", "cmap": ["RdBu_r"], "vmin": [0.0], "vmax": [8.81046066520125], "name": "gauss-ecc"}, {"data": ["__f7993da1fd748575"], "state": null, "attrs": {"priority": 1}, "desc": "", "cmap": ["RdBu_r"], "vmin": [-3.141438327667485], "vmax": [3.141418978457731], "name": "gauss-pol"}, {"data": ["__bd2f7779b1161d8e"], "state": null, "attrs": {"priority": 1}, "desc": "", "cmap": ["RdBu_r"], "vmin": [0.0], "vmax": [13.200690911026967], "name": "gauss-size_1"}, {"data": ["__7a2c8d85e8a5f3ac"], "state": null, "attrs": {"priority": 1}, "desc": "", "cmap": ["RdBu_r"], "vmin": [0.0], "vmax": [0.9238477864094352], "name": "gauss-rsq"}, {"data": ["__6f5574a969b01483"], "state": null, "attrs": {"priority": 1}, "desc": "", "cmap": ["RdBu_r"], "vmin": [0.0], "vmax": [1.5], "name": "csf-width_r"}, {"data": ["__a721bb58bbbeb260"], "state": null, "attrs": {"priority": 1}, "desc": "", "cmap": ["RdBu_r"], "vmin": [0.0], "vmax": [6.0], "name": "csf-SFp"}, {"data": ["__9e270005c1e6fc1b"], "state": null, "attrs": {"priority": 1}, "desc": "", "cmap": ["RdBu_r"], "vmin": [0.0], "vmax": [200.0], "name": "csf-CSp"}, {"data": ["__778d850a0245d181"], "state": null, "attrs": {"priority": 1}, "desc": "", "cmap": ["RdBu_r"], "vmin": [0.0], "vmax": [10.0], "name": "csf-crf_exp"}, {"data": ["__aa97995cfa8614c1"], "state": null, "attrs": {"priority": 1}, "desc": "", "cmap": ["RdBu_r"], "vmin": [0.0], "vmax": [7600.902152057105], "name": "csf-aulcsf"}, {"data": ["__947a9488e60be808"], "state": null, "attrs": {"priority": 1}, "desc": "", "cmap": ["RdBu_r"], "vmin": [0.0], "vmax": [0.8562098741531372], "name": "csf-rsq"}], "data": {"__a721bb58bbbeb260": {"split": 189700, "frames": 1, "name": "__a721bb58bbbeb260", "subject": "sub-12112020", "min": 0.0, "max": 6.0, "raw": false}, "__bd2f7779b1161d8e": {"split": 189700, "frames": 1, "name": "__bd2f7779b1161d8e", "subject": "sub-12112020", "min": 0.0, "max": 13.200691223144531, "raw": false}, "__9e270005c1e6fc1b": {"split": 189700, "frames": 1, "name": "__9e270005c1e6fc1b", "subject": "sub-12112020", "min": 0.0, "max": 200.0, "raw": false}, "__aa97995cfa8614c1": {"split": 189700, "frames": 1, "name": "__aa97995cfa8614c1", "subject": "sub-12112020", "min": 0.0, "max": 7600.90234375, "raw": false}, "__947a9488e60be808": {"split": 189700, "frames": 1, "name": "__947a9488e60be808", "subject": "sub-12112020", "min": 0.0, "max": 0.8562098741531372, "raw": false}, "__6f5574a969b01483": {"split": 189700, "frames": 1, "name": "__6f5574a969b01483", "subject": "sub-12112020", "min": 0.0, "max": 1.5, "raw": false}, "__778d850a0245d181": {"split": 189700, "frames": 1, "name": "__778d850a0245d181", "subject": "sub-12112020", "min": 0.0, "max": 10.0, "raw": false}, "__f7993da1fd748575": {"split": 189700, "frames": 1, "name": "__f7993da1fd748575", "subject": "sub-12112020", "min": -3.1414382457733154, "max": 3.141418933868408, "raw": false}, "__b60861cacb53d811": {"split": 189700, "frames": 1, "name": "__b60861cacb53d811", "subject": "sub-12112020", "min": 0.0, "max": 8.810461044311523, "raw": false}, "__7a2c8d85e8a5f3ac": {"split": 189700, "frames": 1, "name": "__7a2c8d85e8a5f3ac", "subject": "sub-12112020", "min": 0.0, "max": 0.9238477945327759, "raw": false}}, "images": {"__a721bb58bbbeb260": ["data/__a721bb58bbbeb260_0.png"], "__bd2f7779b1161d8e": ["data/__bd2f7779b1161d8e_0.png"], "__9e270005c1e6fc1b": ["data/__9e270005c1e6fc1b_0.png"], "__aa97995cfa8614c1": ["data/__aa97995cfa8614c1_0.png"], "__947a9488e60be808": ["data/__947a9488e60be808_0.png"], "__6f5574a969b01483": ["data/__6f5574a969b01483_0.png"], "__778d850a0245d181": ["data/__778d850a0245d181_0.png"], "__f7993da1fd748575": ["data/__f7993da1fd748575_0.png"], "__b60861cacb53d811": ["data/__b60861cacb53d811_0.png"], "__7a2c8d85e8a5f3ac": ["data/__7a2c8d85e8a5f3ac_0.png"]}});
 viewer.addData(dataviews);
 
 }
