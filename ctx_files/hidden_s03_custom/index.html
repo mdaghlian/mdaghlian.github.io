@@ -2,7 +2,13 @@
 if (window.webkitURL)
     window.URL = window.webkitURL;
 </script><title>Brain</title>
-
+<script>
+	const password = "calm_owl_tiger"; // Set your password
+	const enteredPassword = prompt("Enter the password:");
+	if (enteredPassword !== password) {
+		window.location.href = "https://mdaghlian.github.io/access_denied.html";
+	}
+</script>
 <meta charset=utf-8>
 <meta name=viewport content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
 <style type="text/css">/*! jQuery UI - v1.11.2 - 2014-10-16
